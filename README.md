@@ -1,36 +1,33 @@
 # Dengue Pool Detector
 
-This application helps Dengue Control teams identify potential mosquito breeding grounds by detecting swimming pools in satellite imagery. It uses computer vision to find the characteristic blue/cyan color of pools, calculates their geographic coordinates, and generates an actionable report and interactive map.
+Esta aplicação ajuda as equipes de Controle da Dengue a identificar possíveis focos de reprodução de mosquitos detectando piscinas em imagens de satélite. Ela utiliza visão computacional para encontrar a cor azul/ciano característica das piscinas, calcula suas coordenadas geográficas e gera relatórios com os endereços.
 
-## Methodology
+## Como funciona (Metodologia)
 
-1. **Satellite Imagery Fetching**: The script fetches high-resolution satellite imagery tiles from the Esri World Imagery map service for a given geographic bounding box.
-2. **Computer Vision (OpenCV)**: Each image tile is converted into the HSV color space. A color thresholding mask is applied to isolate pixels that fall within the typical blue/cyan range of swimming pools. Morphological operations (erosion and dilation) are used to clean up noise. Contours are then found to identify individual pool areas.
-3. **Coordinate Calculation**: The pixel coordinates of the detected pools within the local image tile are translated back into global geographic coordinates (Latitude and Longitude) using the standard Web Mercator projection formulas.
-4. **Reverse Geocoding**: The calculated geographic coordinates are passed to Nominatim (via `geopy`) to retrieve the approximate street address for the location.
-5. **Output Generation**: The results are exported to a CSV file (`detected_pools.csv`) and an interactive HTML map (`pools_map.html`) using `folium`.
+1. **Busca de Imagens de Satélite**: O sistema busca blocos de imagens de satélite de alta resolução a partir de um raio em volta do local pesquisado, usando o serviço público da Esri World Imagery.
+2. **Visão Computacional (OpenCV)**: Cada imagem é convertida e filtrada para isolar a cor das piscinas.
+3. **Geolocalização (Geopy)**: O sistema converte os pixels de volta para coordenadas globais (Latitude/Longitude) e busca os nomes das ruas e bairros.
+4. **Interface Gráfica**: Uma interface web interativa é gerada usando **Streamlit**.
 
-## Prerequisites
+## Pré-requisitos
 
-Python 3.x is required. Install the necessary dependencies using pip:
+É necessário ter o Python 3.x instalado. Instale as dependências usando o pip:
 
 ```bash
-pip install requests opencv-python-headless numpy geopy folium pandas
+pip install requests opencv-python-headless numpy geopy folium pandas streamlit streamlit-folium
 ```
 
-## Usage
+## Como usar a Interface Web
 
-1. Open `dengue_pool_detector.py`.
-2. Modify the target bounding box coordinates at the bottom of the script in the `__main__` block:
-   ```python
-   # Example bounding box
-   lat1, lon1 = -23.584, -46.666
-   lat2, lon2 = -23.585, -46.665
-   ```
-3. Run the script:
+1. Abra o terminal na pasta do projeto.
+2. Execute o seguinte comando para iniciar a interface:
    ```bash
-   python dengue_pool_detector.py
+   streamlit run app.py
    ```
-4. The output files will be generated in the `output/` directory:
-   - `output/detected_pools.csv`: Contains the latitude, longitude, address, and tile info.
-   - `output/pools_map.html`: An interactive map plotting the detected locations.
+3. O seu navegador vai abrir automaticamente uma aba (geralmente em `http://localhost:8501`).
+4. Na barra lateral esquerda:
+   - Digite o nome da cidade ou bairro que deseja rastrear (ex: "Moema, São Paulo").
+   - Ajuste o "Raio de busca (km)" para definir a área de abrangência.
+5. Clique em **"Iniciar Mapeamento"**.
+6. Uma barra de progresso indicará o status do rastreamento em tempo real.
+7. Ao finalizar, o mapa com os marcadores de piscinas aparecerá na tela e você poderá clicar no botão **"📥 Baixar Relatório (CSV)"** para exportar os endereços encontrados.

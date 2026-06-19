@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+output/
+test_tile.png
+test_tile_with_pools.png
+streamlit.log

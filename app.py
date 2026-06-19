@@ -1,0 +1,73 @@
+import streamlit as st
+from streamlit_folium import st_folium
+import dengue_pool_detector as detector
+import os
+
+st.set_page_config(page_title="Dengue Pool Detector", page_icon="🦟", layout="wide")
+
+st.title("Dengue Pool Detector 🦟💦")
+st.markdown("""
+Esta ferramenta utiliza visão computacional em imagens de satélite para identificar
+possíveis piscinas e ajudar no planejamento da fiscalização de focos do mosquito da Dengue.
+""")
+
+st.sidebar.header("Configurações de Busca")
+location_query = st.sidebar.text_input("Digite a Cidade ou Bairro:", "Moema, São Paulo")
+radius_km = st.sidebar.slider("Raio de busca (km):", min_value=0.1, max_value=2.0, value=0.5, step=0.1)
+
+if st.sidebar.button("Iniciar Mapeamento"):
+    if not location_query:
+        st.sidebar.error("Por favor, insira um local.")
+    else:
+        with st.spinner(f"Buscando coordenadas para '{location_query}'..."):
+            lat, lon = detector.get_location_coordinates(location_query)
+
+        if lat is None or lon is None:
+            st.error("Não foi possível encontrar as coordenadas para este local. Tente ser mais específico.")
+        else:
+            st.success(f"Local encontrado! Coordenadas: {lat:.5f}, {lon:.5f}")
+
+            start_lat, start_lon, end_lat, end_lon = detector.get_bounding_box(lat, lon, radius_km)
+
+            progress_bar = st.progress(0)
+            status_text = st.empty()
+
+            pools_data = []
+            has_error = False
+
+            # Start scan using the generator
+            for update in detector.scan_area_yield(start_lat, start_lon, end_lat, end_lon):
+                if "error" in update:
+                    st.error(update["error"])
+                    has_error = True
+                    break
+                elif "done" in update:
+                    progress_bar.progress(100)
+                    status_text.text("Escaneamento concluído!")
+                    pools_data = update["pools"]
+                else:
+                    prog = update["progress"]
+                    pools_data = update["pools"]
+                    progress_bar.progress(prog)
+                    status_text.text(f"Escaneando área... {int(prog*100)}% concluído. Piscinas detectadas até agora: {len(pools_data)}")
+
+            if not has_error:
+                st.subheader(f"Resultado: {len(pools_data)} piscina(s) detectada(s).")
+
+                if len(pools_data) > 0:
+                    csv_path, m = detector.generate_reports(pools_data)
+
+                    # Display map
+                    st.markdown("### Mapa de Piscinas Detectadas")
+                    st_folium(m, width=800, height=500)
+
+                    # Download CSV button
+                    with open(csv_path, "r") as f:
+                        st.download_button(
+                            label="📥 Baixar Relatório (CSV)",
+                            data=f.read(),
+                            file_name="detected_pools.csv",
+                            mime="text/csv"
+                        )
+                else:
+                    st.info("Nenhuma piscina detectada nesta região com o raio selecionado.")
