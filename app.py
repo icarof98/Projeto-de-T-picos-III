@@ -28,24 +28,18 @@ else:
 
 radius_km = st.sidebar.slider("Raio de busca (km):", min_value=0.1, max_value=2.0, value=0.5, step=0.1)
 
-# Placeholder for the map so it always shows something, even on initial load
-map_placeholder = st.empty()
+if "scan_complete" not in st.session_state:
+    st.session_state.scan_complete = False
 
-if "map_rendered" not in st.session_state:
-    st.session_state.map_rendered = False
-
-if not st.session_state.map_rendered:
-    # Render default map of Brazil
+if not st.session_state.scan_complete and "default_map" not in st.session_state:
     import folium
-    default_m = folium.Map(location=[-14.235, -51.925], zoom_start=4, tiles="OpenStreetMap")
-    with map_placeholder.container():
-        st.markdown("### Mapa de Visualização")
-        st_folium(default_m, width=800, height=500)
+    st.session_state.default_map = folium.Map(location=[-14.235, -51.925], zoom_start=4, tiles="OpenStreetMap")
+
+if not st.session_state.scan_complete:
+    st.markdown("### Mapa de Visualização")
+    st_folium(st.session_state.default_map, width=800, height=500, returned_objects=[])
 
 if st.sidebar.button("Iniciar Mapeamento"):
-    st.session_state.map_rendered = True
-    map_placeholder.empty() # Clear the default map
-
     lat, lon = None, None
 
     if search_type == "Nome do Local":
@@ -100,14 +94,13 @@ if st.sidebar.button("Iniciar Mapeamento"):
                 st.session_state.result_map = folium.Map(location=[lat, lon], zoom_start=14, tiles="OpenStreetMap")
                 st.session_state.csv_path = None
 
-if st.session_state.get("scan_complete", False):
+if st.session_state.scan_complete:
     pools_data = st.session_state.pools_data
     st.subheader(f"Resultado: {len(pools_data)} piscina(s) detectada(s).")
 
     if len(pools_data) > 0:
-        with map_placeholder.container():
-            st.markdown("### Mapa de Piscinas Detectadas")
-            st_folium(st.session_state.result_map, width=800, height=500)
+        st.markdown("### Mapa de Piscinas Detectadas")
+        st_folium(st.session_state.result_map, width=800, height=500, returned_objects=[])
 
         with open(st.session_state.csv_path, "r", encoding="utf-8") as f:
             st.download_button(
@@ -118,6 +111,5 @@ if st.session_state.get("scan_complete", False):
             )
     else:
         st.info("Nenhuma piscina detectada nesta região com o raio selecionado.")
-        with map_placeholder.container():
-            st.markdown("### Área Buscada (Nenhuma piscina encontrada)")
-            st_folium(st.session_state.result_map, width=800, height=500)
+        st.markdown("### Área Buscada (Nenhuma piscina encontrada)")
+        st_folium(st.session_state.result_map, width=800, height=500, returned_objects=[])
