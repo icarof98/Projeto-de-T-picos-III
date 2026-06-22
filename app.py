@@ -28,7 +28,24 @@ else:
 
 radius_km = st.sidebar.slider("Raio de busca (km):", min_value=0.1, max_value=2.0, value=0.5, step=0.1)
 
+# Placeholder for the map so it always shows something, even on initial load
+map_placeholder = st.empty()
+
+if "map_rendered" not in st.session_state:
+    st.session_state.map_rendered = False
+
+if not st.session_state.map_rendered:
+    # Render default map of Brazil
+    import folium
+    default_m = folium.Map(location=[-14.235, -51.925], zoom_start=4, tiles="OpenStreetMap")
+    with map_placeholder.container():
+        st.markdown("### Mapa de Visualização")
+        st_folium(default_m, width=800, height=500)
+
 if st.sidebar.button("Iniciar Mapeamento"):
+    st.session_state.map_rendered = True
+    map_placeholder.empty() # Clear the default map
+
     lat, lon = None, None
 
     if search_type == "Nome do Local":
@@ -72,22 +89,35 @@ if st.sidebar.button("Iniciar Mapeamento"):
                 status_text.text(f"Escaneando área... {int(prog*100)}% concluído. Piscinas detectadas até agora: {len(pools_data)}")
 
         if not has_error:
-            st.subheader(f"Resultado: {len(pools_data)} piscina(s) detectada(s).")
-
+            st.session_state.scan_complete = True
+            st.session_state.pools_data = pools_data
             if len(pools_data) > 0:
                 csv_path, m = detector.generate_reports(pools_data)
-
-                # Display map
-                st.markdown("### Mapa de Piscinas Detectadas")
-                st_folium(m, width=800, height=500)
-
-                # Download CSV button
-                with open(csv_path, "r", encoding="utf-8") as f:
-                    st.download_button(
-                        label="📥 Baixar Relatório (CSV)",
-                        data=f.read(),
-                        file_name="detected_pools.csv",
-                        mime="text/csv"
-                    )
+                st.session_state.csv_path = csv_path
+                st.session_state.result_map = m
             else:
-                st.info("Nenhuma piscina detectada nesta região com o raio selecionado.")
+                import folium
+                st.session_state.result_map = folium.Map(location=[lat, lon], zoom_start=14, tiles="OpenStreetMap")
+                st.session_state.csv_path = None
+
+if st.session_state.get("scan_complete", False):
+    pools_data = st.session_state.pools_data
+    st.subheader(f"Resultado: {len(pools_data)} piscina(s) detectada(s).")
+
+    if len(pools_data) > 0:
+        with map_placeholder.container():
+            st.markdown("### Mapa de Piscinas Detectadas")
+            st_folium(st.session_state.result_map, width=800, height=500)
+
+        with open(st.session_state.csv_path, "r", encoding="utf-8") as f:
+            st.download_button(
+                label="📥 Baixar Relatório (CSV)",
+                data=f.read(),
+                file_name="detected_pools.csv",
+                mime="text/csv"
+            )
+    else:
+        st.info("Nenhuma piscina detectada nesta região com o raio selecionado.")
+        with map_placeholder.container():
+            st.markdown("### Área Buscada (Nenhuma piscina encontrada)")
+            st_folium(st.session_state.result_map, width=800, height=500)
