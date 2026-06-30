@@ -28,6 +28,8 @@ else:
 
 radius_km = st.sidebar.slider("Raio de busca (km):", min_value=0.1, max_value=2.0, value=0.5, step=0.1)
 
+use_yolo = st.sidebar.checkbox("Usar Inteligência Artificial Avançada (YOLO)", value=False, help="Requer modelo 'piscinas.pt' e biblioteca 'ultralytics' instalada.")
+
 if "scan_complete" not in st.session_state:
     st.session_state.scan_complete = False
 
@@ -35,11 +37,17 @@ if not st.session_state.scan_complete and "default_map" not in st.session_state:
     import folium
     st.session_state.default_map = folium.Map(location=[-14.235, -51.925], zoom_start=4, tiles="OpenStreetMap")
 
-if not st.session_state.scan_complete:
+if "validation_complete" not in st.session_state:
+    st.session_state.validation_complete = False
+
+if not st.session_state.scan_complete and not st.session_state.validation_complete:
     st.markdown("### Mapa de Visualização")
     st_folium(st.session_state.default_map, width=800, height=500, returned_objects=[])
 
 if st.sidebar.button("Iniciar Mapeamento"):
+    st.session_state.scan_complete = False
+    st.session_state.validation_complete = False
+
     lat, lon = None, None
 
     if search_type == "Nome do Local":
@@ -67,7 +75,7 @@ if st.sidebar.button("Iniciar Mapeamento"):
         has_error = False
 
         # Start scan using the generator
-        for update in detector.scan_area_yield(start_lat, start_lon, end_lat, end_lon):
+        for update in detector.scan_area_yield(start_lat, start_lon, end_lat, end_lon, use_yolo=use_yolo):
             if "error" in update:
                 st.error(update["error"])
                 has_error = True
@@ -85,31 +93,73 @@ if st.sidebar.button("Iniciar Mapeamento"):
         if not has_error:
             st.session_state.scan_complete = True
             st.session_state.pools_data = pools_data
-            if len(pools_data) > 0:
-                csv_path, m = detector.generate_reports(pools_data)
-                st.session_state.csv_path = csv_path
-                st.session_state.result_map = m
+            # Initialize all pools as verified=True by default
+            if "verified_pools" not in st.session_state:
+                st.session_state.verified_pools = {p['id']: True for p in pools_data}
             else:
-                import folium
-                st.session_state.result_map = folium.Map(location=[lat, lon], zoom_start=14, tiles="OpenStreetMap")
-                st.session_state.csv_path = None
+                st.session_state.verified_pools.clear()
+                for p in pools_data:
+                    st.session_state.verified_pools[p['id']] = True
 
-if st.session_state.scan_complete:
+            st.rerun()
+
+if st.session_state.scan_complete and not st.session_state.validation_complete:
     pools_data = st.session_state.pools_data
-    st.subheader(f"Resultado: {len(pools_data)} piscina(s) detectada(s).")
 
-    if len(pools_data) > 0:
-        st.markdown("### Mapa de Piscinas Detectadas")
-        st_folium(st.session_state.result_map, width=800, height=500, returned_objects=[])
+    if len(pools_data) == 0:
+        st.info("Nenhuma piscina detectada nesta região com o raio selecionado.")
+        st.session_state.validation_complete = True
+        if st.button("Voltar"):
+            st.session_state.scan_complete = False
+            st.rerun()
+    else:
+        st.subheader("🕵️ Painel de Validação de Piscinas")
+        st.markdown("Revise as imagens recortadas abaixo. Desmarque a caixa das imagens que forem **Falsos Positivos**.")
 
-        with open(st.session_state.csv_path, "r", encoding="utf-8") as f:
+        # Display images in a grid
+        cols = st.columns(4)
+        for i, pool in enumerate(pools_data):
+            col = cols[i % 4]
+            with col:
+                st.image(f"data:image/jpeg;base64,{pool['image_b64']}", use_container_width=True)
+                # Ensure the key aligns with session_state modifications
+                is_checked = st.checkbox(
+                    f"Confirmar Piscina {i+1}",
+                    value=st.session_state.verified_pools[pool['id']],
+                    key=f"chk_{pool['id']}"
+                )
+                st.session_state.verified_pools[pool['id']] = is_checked
+
+        if st.button("Finalizar Validação e Gerar Relatório", type="primary"):
+            st.session_state.validation_complete = True
+            st.rerun()
+
+if st.session_state.validation_complete and len(st.session_state.pools_data) > 0:
+    pools_data = st.session_state.pools_data
+
+    # Filter only validated pools
+    validated_pools = [p for p in pools_data if st.session_state.verified_pools.get(p['id'], False)]
+
+    st.subheader(f"Resultado Final: {len(validated_pools)} piscina(s) confirmada(s).")
+
+    if len(validated_pools) > 0:
+        # Generate reports only for validated
+        csv_path, m = detector.generate_reports(validated_pools)
+
+        st.markdown("### Mapa de Piscinas Detectadas e Confirmadas")
+        st_folium(m, width=800, height=500, returned_objects=[])
+
+        with open(csv_path, "r", encoding="utf-8") as f:
             st.download_button(
                 label="📥 Baixar Relatório (CSV)",
                 data=f.read(),
-                file_name="detected_pools.csv",
+                file_name="detected_pools_validated.csv",
                 mime="text/csv"
             )
     else:
-        st.info("Nenhuma piscina detectada nesta região com o raio selecionado.")
-        st.markdown("### Área Buscada (Nenhuma piscina encontrada)")
-        st_folium(st.session_state.result_map, width=800, height=500, returned_objects=[])
+        st.warning("Todas as piscinas detectadas foram marcadas como falsos positivos na validação.")
+
+    if st.button("Nova Busca"):
+        st.session_state.scan_complete = False
+        st.session_state.validation_complete = False
+        st.rerun()

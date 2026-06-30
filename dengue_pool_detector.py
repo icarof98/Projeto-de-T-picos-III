@@ -41,9 +41,66 @@ def fetch_tile(x, y, z):
         return img
     return None
 
-def detect_pools(img, min_area=20):
+# Global variable to cache the YOLO model so we don't load it per tile
+_YOLO_MODEL = None
+
+def detect_pools_yolo(img, model_path="piscinas.pt", conf_threshold=0.5):
+    """
+    Optional YOLO-based detection method.
+    Requires ultralytics: pip install ultralytics
+    """
+    global _YOLO_MODEL
+
+    try:
+        from ultralytics import YOLO
+    except ImportError:
+        print("Warning: 'ultralytics' is not installed. To use YOLO, run 'pip install ultralytics'.")
+        return []
+
+    import os
+    if not os.path.exists(model_path):
+        # We fallback to returning empty if the specific model doesn't exist
+        print(f"YOLO model {model_path} not found. Skipping YOLO detection.")
+        return []
+
+    if _YOLO_MODEL is None:
+        _YOLO_MODEL = YOLO(model_path)
+
+    results = _YOLO_MODEL(img, conf=conf_threshold, verbose=False)
+
+    pools = []
+    for r in results:
+        boxes = r.boxes
+        for box in boxes:
+            x1, y1, x2, y2 = box.xyxy[0].cpu().numpy().astype(int)
+            area = (x2 - x1) * (y2 - y1)
+
+            # Extract a crop around the pool for validation
+            pad = 20
+            crop_x1, crop_y1 = max(0, x1 - pad), max(0, y1 - pad)
+            crop_x2, crop_y2 = min(img.shape[1], x2 + pad), min(img.shape[0], y2 + pad)
+            crop = img[crop_y1:crop_y2, crop_x1:crop_x2]
+
+            # Encode to base64
+            _, buffer = cv2.imencode('.jpg', crop)
+            import base64
+            b64_img = base64.b64encode(buffer).decode('utf-8')
+
+            pools.append({
+                'px': x1 + (x2 - x1) // 2,
+                'py': y1 + (y2 - y1) // 2,
+                'area': area,
+                'image_b64': b64_img
+            })
+    return pools
+
+def detect_pools(img, min_area=20, use_yolo=False):
     if img is None:
         return []
+
+    if use_yolo:
+        return detect_pools_yolo(img)
+
     hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
     lower_blue = np.array([80, 50, 50])
     upper_blue = np.array([130, 255, 255])
@@ -57,7 +114,24 @@ def detect_pools(img, min_area=20):
         area = cv2.contourArea(cnt)
         if area > min_area:
             x, y, w, h = cv2.boundingRect(cnt)
-            pools.append({'px': x + w // 2, 'py': y + h // 2, 'area': area})
+
+            # Extract a crop around the pool for validation
+            pad = 20
+            x1, y1 = max(0, x - pad), max(0, y - pad)
+            x2, y2 = min(img.shape[1], x + w + pad), min(img.shape[0], y + h + pad)
+            crop = img[y1:y2, x1:x2]
+
+            # Encode to base64
+            _, buffer = cv2.imencode('.jpg', crop)
+            import base64
+            b64_img = base64.b64encode(buffer).decode('utf-8')
+
+            pools.append({
+                'px': x + w // 2,
+                'py': y + h // 2,
+                'area': area,
+                'image_b64': b64_img
+            })
     return pools
 
 def reverse_geocode(lat, lon, geolocator, retries=3):
@@ -98,7 +172,7 @@ def get_bounding_box(lat, lon, radius_km):
 
     return start_lat, start_lon, end_lat, end_lon
 
-def scan_area_yield(start_lat, start_lon, end_lat, end_lon, zoom=18):
+def scan_area_yield(start_lat, start_lon, end_lat, end_lon, zoom=18, use_yolo=False):
     """Scans an area and yields progress and detected pools."""
     start_x, start_y = deg2num(start_lat, start_lon, zoom)
     end_x, end_y = deg2num(end_lat, end_lon, zoom)
@@ -123,14 +197,16 @@ def scan_area_yield(start_lat, start_lon, end_lat, end_lon, zoom=18):
         for y in range(min_y, max_y + 1):
             img = fetch_tile(x, y, zoom)
             if img is not None:
-                pools_in_tile = detect_pools(img)
+                pools_in_tile = detect_pools(img, use_yolo=use_yolo)
                 for pool in pools_in_tile:
                     pool_lat, pool_lon = pixel2deg(x, y, pool['px'], pool['py'], zoom)
                     address = reverse_geocode(pool_lat, pool_lon, geolocator)
                     pool_data = {
                         'Latitude': pool_lat,
                         'Longitude': pool_lon,
-                        'Address': address
+                        'Address': address,
+                        'image_b64': pool.get('image_b64', ''),
+                        'id': f"pool_{pool_lat:.6f}_{pool_lon:.6f}"
                     }
                     detected_pools.append(pool_data)
             tiles_processed += 1
@@ -147,7 +223,10 @@ def generate_reports(pools_data, output_dir="output"):
     if not pools_data:
         return None, None
 
-    df = pd.DataFrame(pools_data)
+    # Exclude base64 image strings from the CSV to save space
+    clean_data = [{k: v for k, v in pool.items() if k != 'image_b64'} for pool in pools_data]
+    df = pd.DataFrame(clean_data)
+
     csv_path = os.path.join(output_dir, "detected_pools.csv")
     df.to_csv(csv_path, index=False)
 
