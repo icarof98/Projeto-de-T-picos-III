@@ -121,7 +121,8 @@ if st.session_state.scan_complete and not st.session_state.validation_complete:
         for i, pool in enumerate(pools_data):
             col = cols[i % 4]
             with col:
-                st.image(f"data:image/jpeg;base64,{pool['image_b64']}", use_container_width=True)
+                # Updated parameter to avoid deprecation warning in newer Streamlit versions
+                st.image(f"data:image/jpeg;base64,{pool['image_b64']}", width='stretch')
                 # Ensure the key aligns with session_state modifications
                 is_checked = st.checkbox(
                     f"Confirmar Piscina {i+1}",
