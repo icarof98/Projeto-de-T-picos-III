@@ -94,12 +94,12 @@ def detect_pools_yolo(img, model_path="piscinas.pt", conf_threshold=0.5):
             })
     return pools
 
-def detect_pools(img, min_area=20, use_yolo=False):
+def detect_pools(img, min_area=20, use_yolo=False, yolo_conf=0.5):
     if img is None:
         return []
 
     if use_yolo:
-        return detect_pools_yolo(img)
+        return detect_pools_yolo(img, conf_threshold=yolo_conf)
 
     hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
     lower_blue = np.array([80, 50, 50])
@@ -172,7 +172,7 @@ def get_bounding_box(lat, lon, radius_km):
 
     return start_lat, start_lon, end_lat, end_lon
 
-def scan_area_yield(start_lat, start_lon, end_lat, end_lon, zoom=18, use_yolo=False):
+def scan_area_yield(start_lat, start_lon, end_lat, end_lon, zoom=18, use_yolo=False, yolo_conf=0.5):
     """Scans an area and yields progress and detected pools."""
 
     if use_yolo:
@@ -210,7 +210,7 @@ def scan_area_yield(start_lat, start_lon, end_lat, end_lon, zoom=18, use_yolo=Fa
         for y in range(min_y, max_y + 1):
             img = fetch_tile(x, y, zoom)
             if img is not None:
-                pools_in_tile = detect_pools(img, use_yolo=use_yolo)
+                pools_in_tile = detect_pools(img, use_yolo=use_yolo, yolo_conf=yolo_conf)
                 for pool in pools_in_tile:
                     pool_lat, pool_lon = pixel2deg(x, y, pool['px'], pool['py'], zoom)
                     address = reverse_geocode(pool_lat, pool_lon, geolocator)

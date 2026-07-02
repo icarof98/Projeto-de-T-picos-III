@@ -30,6 +30,10 @@ radius_km = st.sidebar.slider("Raio de busca (km):", min_value=0.1, max_value=2.
 
 use_yolo = st.sidebar.checkbox("Usar Inteligência Artificial Avançada (YOLO)", value=False, help="Requer modelo 'piscinas.pt' e biblioteca 'ultralytics' instalada.")
 
+yolo_conf = 0.5
+if use_yolo:
+    yolo_conf = st.sidebar.slider("Confiança Mínima do YOLO", min_value=0.05, max_value=0.95, value=0.50, step=0.05, help="Diminua este valor se o modelo não estiver encontrando piscinas, mas cuidado: valores muito baixos podem gerar Falsos Positivos.")
+
 if "scan_complete" not in st.session_state:
     st.session_state.scan_complete = False
 
@@ -75,7 +79,7 @@ if st.sidebar.button("Iniciar Mapeamento"):
         has_error = False
 
         # Start scan using the generator
-        for update in detector.scan_area_yield(start_lat, start_lon, end_lat, end_lon, use_yolo=use_yolo):
+        for update in detector.scan_area_yield(start_lat, start_lon, end_lat, end_lon, use_yolo=use_yolo, yolo_conf=yolo_conf):
             if "error" in update:
                 st.error(update["error"])
                 has_error = True
