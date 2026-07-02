@@ -174,6 +174,19 @@ def get_bounding_box(lat, lon, radius_km):
 
 def scan_area_yield(start_lat, start_lon, end_lat, end_lon, zoom=18, use_yolo=False):
     """Scans an area and yields progress and detected pools."""
+
+    if use_yolo:
+        try:
+            import ultralytics
+        except ImportError:
+            yield {"error": "A biblioteca 'ultralytics' não está instalada. Para usar o YOLO, abra o terminal e rode: pip install ultralytics"}
+            return
+
+        import os
+        if not os.path.exists("piscinas.pt"):
+            yield {"error": "O modelo 'piscinas.pt' não foi encontrado. Por favor, coloque o arquivo 'piscinas.pt' na mesma pasta do aplicativo."}
+            return
+
     start_x, start_y = deg2num(start_lat, start_lon, zoom)
     end_x, end_y = deg2num(end_lat, end_lon, zoom)
 
